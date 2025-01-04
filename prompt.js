@@ -138,6 +138,7 @@ function validateRequest(data) {
 app.post('/generate-prompt', (req, res) => {
   try {
     // Validate the request
+    console.log(req.body)
     const validation = validateRequest(req.body);
     if (!validation.valid) {
       return res.status(400).json({
