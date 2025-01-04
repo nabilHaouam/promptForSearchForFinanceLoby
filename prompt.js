@@ -133,7 +133,7 @@ function validateRequest(data) {
 
   return { valid: true };
 }
-
+console.log('hi')
 // POST endpoint to receive deal data and return generated prompt
 app.post('/generate-prompt', (req, res) => {
     console.log("request body" ,req.body)
