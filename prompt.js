@@ -3,17 +3,36 @@ const express = require('express');
 const app = express();
 const port = 5001;
 
-// Use Express's built-in JSON parser middleware
-app.use(express.json({
-  verify: (req, res, buf) => {
-    try {
-      JSON.parse(buf);
-    } catch (e) {
-      res.status(400).json({ error: 'Invalid JSON' });
-      throw new Error('Invalid JSON');
+// Custom middleware to parse JSON with detailed error handling
+app.use((req, res, next) => {
+  let data = '';
+  
+  req.on('data', chunk => {
+    data += chunk;
+  });
+
+  req.on('end', () => {
+    if (!data) {
+      req.body = {};
+      return next();
     }
-  }
-}));
+
+    try {
+      req.body = JSON.parse(data);
+      next();
+    } catch (e) {
+      // Log the raw data for debugging
+      console.log('Raw request data:', data);
+      console.log('Parse error:', e);
+      
+      res.status(400).json({
+        error: 'Invalid JSON',
+        details: e.message,
+        receivedData: data.slice(0, 100) // Show first 100 chars of received data
+      });
+    }
+  });
+});
 
 // Define the mappings from clickupTags.json
 const clickupTags = {
@@ -95,27 +114,32 @@ function getMappedValue(category, value) {
 
 // Function to generate prompt from the provided data
 function generatePrompt(data) {
-  // Get mapped values from clickupTags
-  const assetType = getMappedValue('assetType', data.assetType);
-  const loanType = getMappedValue('loanType', data.loanType);
-  const loanTerm = getMappedValue('loanTerm', data.loanTerm);
-  
-  // Format loan amount with commas and dollar sign
-  const formattedLoanAmount = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(data.loanAmount);
+  try {
+    // Get mapped values from clickupTags
+    const assetType = getMappedValue('assetType', data.assetType);
+    const loanType = getMappedValue('loanType', data.loanType);
+    const loanTerm = getMappedValue('loanTerm', data.loanTerm);
+    
+    // Format loan amount with commas and dollar sign
+    const formattedLoanAmount = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(data.loanAmount);
 
-  // Generate the prompt
-  return `Location: ${data.location}
+    // Generate the prompt
+    return `Location: ${data.location}
 Deal Summary: ${data.dealSummary}
 Deal Description: ${data.dealDescription}
 Asset Type: ${assetType}
 Loan Amount: ${formattedLoanAmount}
 Loan Type: ${loanType}
 Loan Term: ${loanTerm}`;
+  } catch (error) {
+    console.error('Error generating prompt:', error);
+    throw new Error(`Failed to generate prompt: ${error.message}`);
+  }
 }
 
 // Validate required fields in the request
@@ -145,6 +169,9 @@ function validateRequest(data) {
 // POST endpoint to receive deal data and return generated prompt
 app.post('/generate-prompt', (req, res) => {
   try {
+    // Log the received data for debugging
+    console.log('Received request body:', JSON.stringify(req.body, null, 2));
+
     // Validate the request
     const validation = validateRequest(req.body);
     if (!validation.valid) {
@@ -168,6 +195,7 @@ app.post('/generate-prompt', (req, res) => {
     });
 
   } catch (error) {
+    console.error('Error processing request:', error);
     res.status(500).json({
       error: 'Failed to generate prompt',
       details: error.message
