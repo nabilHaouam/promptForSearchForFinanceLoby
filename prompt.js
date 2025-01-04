@@ -5,42 +5,54 @@ const port = 5001;
 
 // Custom middleware to parse JSON with detailed error handling
 app.use((req, res, next) => {
-    let data = '';
+    let rawData = '';
     
     req.on('data', chunk => {
-      data += chunk;
+      rawData += chunk;
     });
   
     req.on('end', () => {
-      if (!data) {
+      // Log the raw data before any processing
+      console.log('Raw data received:', rawData);
+      console.log('Raw data length:', rawData.length);
+      console.log('Raw data first 50 characters:', rawData.slice(0, 50));
+      
+      // If empty request
+      if (!rawData) {
         req.body = {};
         return next();
       }
   
       try {
-        // Clean the data by replacing literal newlines with escaped newlines
-        const cleanedData = data
-          .replace(/\n/g, '\\n')
-          .replace(/\r/g, '\\r')
-          .replace(/\t/g, '\\t');
-        
-        // Parse the cleaned JSON
-        req.body = JSON.parse(cleanedData);
-        
-        // Clean up the parsed strings by removing extra whitespace
-        Object.keys(req.body).forEach(key => {
-          if (typeof req.body[key] === 'string') {
-            req.body[key] = req.body[key].trim();
-          }
-        });
-  
+        // Try to parse as-is first
+        req.body = JSON.parse(rawData);
+        console.log('Successfully parsed JSON');
         next();
       } catch (e) {
-        console.log('Parse error:', e);
-        res.status(400).json({
-          error: 'Invalid JSON',
-          details: e.message
-        });
+        console.log('First parse attempt failed, trying with cleanup...');
+        try {
+          // Try to clean the data
+          let cleanedData = rawData
+            .replace(/^\uFEFF/, '') // Remove BOM if present
+            .trim() // Remove leading/trailing whitespace
+            .replace(/\r?\n|\r/g, ' ') // Replace newlines with spaces
+            .replace(/\s+/g, ' '); // Replace multiple spaces with single space
+  
+          console.log('Cleaned data:', cleanedData);
+          req.body = JSON.parse(cleanedData);
+          console.log('Successfully parsed cleaned JSON');
+          next();
+        } catch (e2) {
+          console.error('Both parse attempts failed');
+          console.error('Original error:', e);
+          console.error('Cleanup error:', e2);
+          res.status(400).json({
+            error: 'Invalid JSON',
+            originalError: e.message,
+            cleanupError: e2.message,
+            receivedData: rawData.slice(0, 100) // First 100 chars for debugging
+          });
+        }
       }
     });
   });
@@ -124,30 +136,24 @@ function getMappedValue(category, value) {
   }
   
   function generatePrompt(data) {
-    try {
-      const assetType = getMappedValue('assetType', data.assetType);
-      const loanType = getMappedValue('loanType', data.loanType);
-      const loanTerm = getMappedValue('loanTerm', data.loanTerm);
-      
-      const formattedLoanAmount = new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-      }).format(data.loanAmount);
+    const assetType = getMappedValue('assetType', data.assetType);
+    const loanType = getMappedValue('loanType', data.loanType);
+    const loanTerm = getMappedValue('loanTerm', data.loanTerm);
+    
+    const formattedLoanAmount = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(data.loanAmount);
   
-      // Generate the prompt with sanitized strings
-      return `Location: ${data.location}
+    return `Location: ${data.location}
   Deal Summary: ${data.dealSummary}
   Deal Description: ${data.dealDescription}
   Asset Type: ${assetType}
   Loan Amount: ${formattedLoanAmount}
   Loan Type: ${loanType}
   Loan Term: ${loanTerm}`;
-    } catch (error) {
-      console.error('Error generating prompt:', error);
-      throw new Error(`Failed to generate prompt: ${error.message}`);
-    }
   }
   
   function validateRequest(data) {
@@ -175,6 +181,8 @@ function getMappedValue(category, value) {
   
   app.post('/generate-prompt', (req, res) => {
     try {
+      console.log('Processing request body:', req.body);
+  
       const validation = validateRequest(req.body);
       if (!validation.valid) {
         return res.status(400).json({
@@ -198,9 +206,19 @@ function getMappedValue(category, value) {
       console.error('Error processing request:', error);
       res.status(500).json({
         error: 'Failed to generate prompt',
-        details: error.message
+        details: error.message,
+        stack: error.stack
       });
     }
+  });
+  
+  // Add error handling middleware
+  app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({
+      error: 'Server error',
+      details: err.message
+    });
   });
   
   app.listen(port, () => {
