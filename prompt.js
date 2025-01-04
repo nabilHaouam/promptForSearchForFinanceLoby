@@ -5,35 +5,46 @@ const port = 5001;
 
 // Custom middleware to parse JSON with detailed error handling
 app.use((req, res, next) => {
-  let data = '';
+    let data = '';
+    
+    req.on('data', chunk => {
+      data += chunk;
+    });
   
-  req.on('data', chunk => {
-    data += chunk;
+    req.on('end', () => {
+      if (!data) {
+        req.body = {};
+        return next();
+      }
+  
+      try {
+        // Clean the data by replacing literal newlines with escaped newlines
+        const cleanedData = data
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t');
+        
+        // Parse the cleaned JSON
+        req.body = JSON.parse(cleanedData);
+        
+        // Clean up the parsed strings by removing extra whitespace
+        Object.keys(req.body).forEach(key => {
+          if (typeof req.body[key] === 'string') {
+            req.body[key] = req.body[key].trim();
+          }
+        });
+  
+        next();
+      } catch (e) {
+        console.log('Parse error:', e);
+        res.status(400).json({
+          error: 'Invalid JSON',
+          details: e.message
+        });
+      }
+    });
   });
-
-  req.on('end', () => {
-    if (!data) {
-      req.body = {};
-      return next();
-    }
-
-    try {
-      req.body = JSON.parse(data);
-      next();
-    } catch (e) {
-      // Log the raw data for debugging
-      console.log('Raw request data:', data);
-      console.log('Parse error:', e);
-      
-      res.status(400).json({
-        error: 'Invalid JSON',
-        details: e.message,
-        receivedData: data.slice(0, 100) // Show first 100 chars of received data
-      });
-    }
-  });
-});
-
+  
 // Define the mappings from clickupTags.json
 const clickupTags = {
   assetType: {
@@ -106,104 +117,92 @@ const clickupTags = {
 
 // Function to get mapped value from clickupTags
 function getMappedValue(category, value) {
-  if (!clickupTags[category] || !clickupTags[category][value]) {
-    return 'Unknown';
+    if (!clickupTags[category] || !clickupTags[category][value]) {
+      return 'Unknown';
+    }
+    return clickupTags[category][value];
   }
-  return clickupTags[category][value];
-}
-
-// Function to generate prompt from the provided data
-function generatePrompt(data) {
-  try {
-    // Get mapped values from clickupTags
-    const assetType = getMappedValue('assetType', data.assetType);
-    const loanType = getMappedValue('loanType', data.loanType);
-    const loanTerm = getMappedValue('loanTerm', data.loanTerm);
-    
-    // Format loan amount with commas and dollar sign
-    const formattedLoanAmount = new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(data.loanAmount);
-
-    // Generate the prompt
-    return `Location: ${data.location}
-Deal Summary: ${data.dealSummary}
-Deal Description: ${data.dealDescription}
-Asset Type: ${assetType}
-Loan Amount: ${formattedLoanAmount}
-Loan Type: ${loanType}
-Loan Term: ${loanTerm}`;
-  } catch (error) {
-    console.error('Error generating prompt:', error);
-    throw new Error(`Failed to generate prompt: ${error.message}`);
-  }
-}
-
-// Validate required fields in the request
-function validateRequest(data) {
-  const requiredFields = [
-    'location',
-    'dealSummary',
-    'assetType',
-    'dealDescription',
-    'loanAmount',
-    'loanType',
-    'loanTerm'
-  ];
-
-  const missingFields = requiredFields.filter(field => !data[field]);
   
-  if (missingFields.length > 0) {
-    return {
-      valid: false,
-      error: `Missing required fields: ${missingFields.join(', ')}`
-    };
+  function generatePrompt(data) {
+    try {
+      const assetType = getMappedValue('assetType', data.assetType);
+      const loanType = getMappedValue('loanType', data.loanType);
+      const loanTerm = getMappedValue('loanTerm', data.loanTerm);
+      
+      const formattedLoanAmount = new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(data.loanAmount);
+  
+      // Generate the prompt with sanitized strings
+      return `Location: ${data.location}
+  Deal Summary: ${data.dealSummary}
+  Deal Description: ${data.dealDescription}
+  Asset Type: ${assetType}
+  Loan Amount: ${formattedLoanAmount}
+  Loan Type: ${loanType}
+  Loan Term: ${loanTerm}`;
+    } catch (error) {
+      console.error('Error generating prompt:', error);
+      throw new Error(`Failed to generate prompt: ${error.message}`);
+    }
   }
-
-  return { valid: true };
-}
-
-// POST endpoint to receive deal data and return generated prompt
-app.post('/generate-prompt', (req, res) => {
-  try {
-    // Log the received data for debugging
-    console.log('Received request body:', JSON.stringify(req.body, null, 2));
-
-    // Validate the request
-    const validation = validateRequest(req.body);
-    if (!validation.valid) {
-      return res.status(400).json({
-        error: validation.error
+  
+  function validateRequest(data) {
+    const requiredFields = [
+      'location',
+      'dealSummary',
+      'assetType',
+      'dealDescription',
+      'loanAmount',
+      'loanType',
+      'loanTerm'
+    ];
+  
+    const missingFields = requiredFields.filter(field => !data[field]);
+    
+    if (missingFields.length > 0) {
+      return {
+        valid: false,
+        error: `Missing required fields: ${missingFields.join(', ')}`
+      };
+    }
+  
+    return { valid: true };
+  }
+  
+  app.post('/generate-prompt', (req, res) => {
+    try {
+      const validation = validateRequest(req.body);
+      if (!validation.valid) {
+        return res.status(400).json({
+          error: validation.error
+        });
+      }
+  
+      const prompt = generatePrompt(req.body);
+  
+      res.json({
+        success: true,
+        prompt,
+        mappedValues: {
+          assetType: getMappedValue('assetType', req.body.assetType),
+          loanType: getMappedValue('loanType', req.body.loanType),
+          loanTerm: getMappedValue('loanTerm', req.body.loanTerm)
+        }
+      });
+  
+    } catch (error) {
+      console.error('Error processing request:', error);
+      res.status(500).json({
+        error: 'Failed to generate prompt',
+        details: error.message
       });
     }
-
-    // Generate the prompt
-    const prompt = generatePrompt(req.body);
-
-    // Return the generated prompt and mapped values
-    res.json({
-      success: true,
-      prompt,
-      mappedValues: {
-        assetType: getMappedValue('assetType', req.body.assetType),
-        loanType: getMappedValue('loanType', req.body.loanType),
-        loanTerm: getMappedValue('loanTerm', req.body.loanTerm)
-      }
-    });
-
-  } catch (error) {
-    console.error('Error processing request:', error);
-    res.status(500).json({
-      error: 'Failed to generate prompt',
-      details: error.message
-    });
-  }
-});
-
-// Start the server
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+  });
+  
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+  });
