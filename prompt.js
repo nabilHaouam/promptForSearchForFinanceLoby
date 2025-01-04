@@ -1,11 +1,19 @@
 const express = require('express');
-const bodyParser = require('body-parser');
 
 const app = express();
 const port = 5001;
 
-// Middleware to parse JSON bodies
-app.use(bodyParser.json());
+// Use Express's built-in JSON parser middleware
+app.use(express.json({
+  verify: (req, res, buf) => {
+    try {
+      JSON.parse(buf);
+    } catch (e) {
+      res.status(400).json({ error: 'Invalid JSON' });
+      throw new Error('Invalid JSON');
+    }
+  }
+}));
 
 // Define the mappings from clickupTags.json
 const clickupTags = {
@@ -133,13 +141,11 @@ function validateRequest(data) {
 
   return { valid: true };
 }
-console.log('hi')
+
 // POST endpoint to receive deal data and return generated prompt
 app.post('/generate-prompt', (req, res) => {
-    console.log("request body" ,req.body)
   try {
     // Validate the request
- 
     const validation = validateRequest(req.body);
     if (!validation.valid) {
       return res.status(400).json({
@@ -170,6 +176,6 @@ app.post('/generate-prompt', (req, res) => {
 });
 
 // Start the server
-app.listen(port,'127.0.0.1', () => {
-  console.log(`Server running at http://localhost:4000`);
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
 });
