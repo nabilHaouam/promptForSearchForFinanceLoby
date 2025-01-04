@@ -134,42 +134,70 @@ function validateRequest(data) {
   return { valid: true };
 }
 
-// POST endpoint to receive deal data and return generated prompt
-app.post('/generate-prompt', (req, res) => {
-    console.log("request body" ,req.body)
-  try {
-    // Validate the request
- 
-    const validation = validateRequest(req.body);
-    if (!validation.valid) {
+
+app.use(express.raw({type: '*/*'}), (req, res, next) => {
+    const timestamp = new Date().toISOString();
+    console.log(`\n[${timestamp}] Raw Request Body:`);
+    console.log(req.body.toString());
+    
+    try {
+      if (req.body.length) {
+        req.rawBody = req.body;
+        req.body = JSON.parse(req.body.toString());
+      }
+      next();
+    } catch (error) {
+      console.error('JSON Parse Error:', error);
+      console.log('Problematic JSON string:', req.body.toString());
       return res.status(400).json({
-        error: validation.error
+        error: 'Invalid JSON',
+        details: error.message,
+        receivedData: req.body.toString()
       });
     }
-
-    // Generate the prompt
-    const prompt = generatePrompt(req.body);
-
-    // Return the generated prompt and mapped values
-    res.json({
-      success: true,
-      prompt,
-      mappedValues: {
-        assetType: getMappedValue('assetType', req.body.assetType),
-        loanType: getMappedValue('loanType', req.body.loanType),
-        loanTerm: getMappedValue('loanTerm', req.body.loanTerm)
-      }
-    });
-
-  } catch (error) {
+  });
+  
+  // Modify the error handling middleware
+  app.use((err, req, res, next) => {
+    console.error('Error:', err);
     res.status(500).json({
-      error: 'Failed to generate prompt',
-      details: error.message
+      error: 'Internal Server Error',
+      details: err.message,
+      stack: err.stack
     });
-  }
-});
-
-// Start the server
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:4000`);
-});
+  });
+  
+  // Your existing endpoint
+  app.post('/generate-prompt', (req, res) => {
+    try {
+      // Log the cleaned request body
+      console.log('\nProcessed Request Body:', JSON.stringify(req.body, null, 2));
+  
+      const validation = validateRequest(req.body);
+      if (!validation.valid) {
+        return res.status(400).json({
+          error: validation.error
+        });
+      }
+  
+      const prompt = generatePrompt(req.body);
+      const response = {
+        success: true,
+        prompt,
+        mappedValues: {
+          assetType: getMappedValue('assetType', req.body.assetType),
+          loanType: getMappedValue('loanType', req.body.loanType),
+          loanTerm: getMappedValue('loanTerm', req.body.loanTerm)
+        }
+      };
+  
+      res.json(response);
+  
+    } catch (error) {
+      console.error('Processing Error:', error);
+      res.status(500).json({
+        error: 'Failed to generate prompt',
+        details: error.message
+      });
+    }
+  });
