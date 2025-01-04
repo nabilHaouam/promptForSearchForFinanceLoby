@@ -136,9 +136,10 @@ function validateRequest(data) {
 
 // POST endpoint to receive deal data and return generated prompt
 app.post('/generate-prompt', (req, res) => {
+    console.log("request body" ,req.body)
   try {
     // Validate the request
-    console.log(req.body)
+ 
     const validation = validateRequest(req.body);
     if (!validation.valid) {
       return res.status(400).json({
