@@ -212,7 +212,7 @@ function getMappedValue(category, value) {
     }
   });
 
-  app.post('/parse-csv-data', (req, res) => {
+  app.post('/parse-paste-data', (req, res) => {
     try {
       const { inputString } = req.body;
       
@@ -222,96 +222,96 @@ function getMappedValue(category, value) {
         });
       }
   
+      // Parse the input string as JSON array
+      let parsedArray;
+      try {
+        parsedArray = JSON.parse(inputString);
+      } catch (e) {
+        return res.status(400).json({
+          error: 'Invalid JSON format',
+          details: e.message
+        });
+      }
+  
       // Initialize result object
       const result = {
-        lenderLists: [],
-        script: '',
-        emailDetails: null
+        similarDealsLenders: [],
+        capableLenders: [],
+        localLenders: [],
+        voicemailScript: '',
+        emailDetails: {
+          subject: '',
+          summary: ''
+        }
       };
   
-      // Split the input into sections based on newline patterns
-      const sections = inputString.split(/(?=List \d:)/).map(section => section.trim());
+      let currentSection = null;
   
-      // Process each section
-      sections.forEach(section => {
-        if (!section) return; // Skip empty sections
-        
-        const lines = section.split('\n').map(line => line.trim());
-        
-        // Check if this is a List section
-        if (section.startsWith('List')) {
-          const csvLines = lines
-            .filter(line => 
-              line && 
-              !line.startsWith('List') && 
-              line !== 'Company Name,Website,Reason for Fit'
-            );
-  
-          const lenders = csvLines.map(line => {
-            const [companyName, website, reasonForFit] = line.split(',').map(field => field.trim());
-            return {
-              companyName,
-              website,
-              reasonForFit
-            };
-          }).filter(lender => lender.companyName && lender.website && lender.reasonForFit);
-  
-          if (lenders.length > 0) {
-            result.lenderLists.push(lenders);
-          }
+      // Process each row in the array
+      parsedArray.forEach(row => {
+        // Check for section headers
+        if (row[0].includes("institutions that have done similar deals")) {
+          currentSection = "similarDeals";
+        } else if (row[0].includes("institutions that can do the deal")) {
+          currentSection = "capable";
+        } else if (row[0].includes("institutions within a 20km radius")) {
+          currentSection = "local";
+        } else if (row[0] === "Voicemail Script") {
+          currentSection = "voicemail";
+        } else if (row[0] === "Deal Summary for Email") {
+          currentSection = "email";
         }
-        // Process Script section if we add it later
-        else if (section.includes('Script:')) {
-          const scriptContent = lines
-            .filter(line => line && !line.startsWith('Script:'))
-            .join(' ');
-          if (scriptContent) {
-            result.script = scriptContent;
-          }
-        }
-        // Process Email section if we add it later
-        else if (section.includes('Email Subject,Deal Summary')) {
-          const emailLines = lines
-            .filter(line => 
-              line && 
-              line !== 'Email Subject,Deal Summary' && 
-              !line.startsWith('Deal Summary for Email:')
-            );
-          
-          if (emailLines.length > 0) {
-            const [subject, summary] = emailLines[0].split(',').map(field => field.trim());
-            result.emailDetails = {
-              subject,
-              summary
-            };
+        // Process data rows
+        else if (row[0] !== "Company Name" && row[0] && currentSection) {
+          switch (currentSection) {
+            case "similarDeals":
+            case "capable":
+            case "local":
+              if (row[0] && row[1] && row[2]) {
+                const lender = {
+                  companyName: row[0],
+                  website: row[1],
+                  reasonForFit: row[2]
+                };
+                if (currentSection === "similarDeals") {
+                  result.similarDealsLenders.push(lender);
+                } else if (currentSection === "capable") {
+                  result.capableLenders.push(lender);
+                } else {
+                  result.localLenders.push(lender);
+                }
+              }
+              break;
+            case "voicemail":
+              if (row[0] && !row[0].includes("Script")) {
+                result.voicemailScript = row[0];
+              }
+              break;
+            case "email":
+              if (row[0] && row[1]) {
+                result.emailDetails = {
+                  subject: row[0],
+                  summary: row[1]
+                };
+              }
+              break;
           }
         }
       });
-  
-      // Add debugging information in development
-      const debug = {
-        numberOfSections: sections.length,
-        sectionsFound: sections.map(section => section.split('\n')[0]),
-        numberOfLenderLists: result.lenderLists.length,
-        totalLenders: result.lenderLists.reduce((acc, list) => acc + list.length, 0)
-      };
   
       res.json({
         success: true,
-        data: result,
-        debug: process.env.NODE_ENV !== 'production' ? debug : undefined
+        data: result
       });
   
     } catch (error) {
-      console.error('Error processing CSV data:', error);
+      console.error('Error processing paste data:', error);
       res.status(500).json({
-        error: 'Failed to parse CSV data',
-        details: error.message,
-        stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined
+        error: 'Failed to parse paste data',
+        details: error.message
       });
     }
   });
-  
   // Add error handling middleware
   app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
