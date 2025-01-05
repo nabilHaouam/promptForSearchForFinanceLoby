@@ -222,118 +222,32 @@ function getMappedValue(category, value) {
         });
       }
   
-      // Clean and parse the input string
-      let parsedArray;
-      try {
-        if (!inputString) {
-          return res.status(400).json({
-            error: 'Missing input',
-            details: 'Input string is required'
-          });
-        }
+      // If inputString is not a string, convert it
+      const stringInput = typeof inputString === 'string' ? 
+        inputString : 
+        JSON.stringify(inputString);
+      
+      // Clean the input string
+      const cleanedInput = stringInput
+        .replace(/^\s+|\s+$/g, '') // Trim whitespace
+        .replace(/^3\|prompt\s+\|/gm, '') // Remove log prefixes
+        .replace(/\n\s+/g, '\n') // Remove extra spaces after newlines
+        .trim();
   
-        // If inputString is not a string, convert it
-        const stringInput = typeof inputString === 'string' ? 
-          inputString : 
-          JSON.stringify(inputString);
-        
-        // Clean the input string
-        const cleanedInput = stringInput
-          .replace(/^\s+|\s+$/g, '') // Trim whitespace
-          .replace(/^3\|prompt\s+\|/gm, '') // Remove log prefixes
-          .replace(/\n\s+/g, '\n') // Remove extra spaces after newlines
-          .trim();
+      // Parse the JSON
+      const parsed = JSON.parse(cleanedInput);
+      const rows = Array.isArray(parsed) ? parsed : parsed.inputString;
   
-        console.log('Cleaned input:', cleanedInput.substring(0, 100));
-        
-        const parsed = JSON.parse(cleanedInput);
-        
-        // Check if the input is wrapped in an inputString property
-        parsedArray = Array.isArray(parsed) ? parsed : parsed.inputString;
-        
-        if (!Array.isArray(parsedArray)) {
-          return res.status(400).json({
-            error: 'Invalid format',
-            details: 'Input must be an array or an object with inputString array property'
-          });
-        }
-      } catch (e) {
-        console.error('Parsing error:', e);
+      if (!Array.isArray(rows)) {
         return res.status(400).json({
-          error: 'Invalid JSON format',
-          details: e.message
+          error: 'Invalid format',
+          details: 'Input must be an array or an object with inputString array property'
         });
       }
   
-      // Initialize result object
-      const result = {
-        similarDealsLenders: [],
-        capableLenders: [],
-        localLenders: [],
-        voicemailScript: '',
-        emailDetails: {
-          subject: '',
-          summary: ''
-        }
-      };
-  
-      let currentSection = null;
-  
-      // Process each row in the array
-      parsedArray.forEach(row => {
-        // Check for section headers
-        if (row[0].includes("institutions that have done similar deals")) {
-          currentSection = "similarDeals";
-        } else if (row[0].includes("institutions that can do the deal")) {
-          currentSection = "capable";
-        } else if (row[0].includes("institutions within a 20km radius")) {
-          currentSection = "local";
-        } else if (row[0] === "Voicemail Script") {
-          currentSection = "voicemail";
-        } else if (row[0] === "Deal Summary for Email") {
-          currentSection = "email";
-        }
-        // Process data rows
-        else if (row[0] !== "Company Name" && row[0] && currentSection) {
-          switch (currentSection) {
-            case "similarDeals":
-            case "capable":
-            case "local":
-              if (row[0] && row[1] && row[2]) {
-                const lender = {
-                  companyName: row[0],
-                  website: row[1],
-                  reasonForFit: row[2]
-                };
-                if (currentSection === "similarDeals") {
-                  result.similarDealsLenders.push(lender);
-                } else if (currentSection === "capable") {
-                  result.capableLenders.push(lender);
-                } else {
-                  result.localLenders.push(lender);
-                }
-              }
-              break;
-            case "voicemail":
-              if (row[0] && !row[0].includes("Script")) {
-                result.voicemailScript = row[0];
-              }
-              break;
-            case "email":
-              if (row[0] && row[1]) {
-                result.emailDetails = {
-                  subject: row[0],
-                  summary: row[1]
-                };
-              }
-              break;
-          }
-        }
-      });
-  
       res.json({
         success: true,
-        data: result
+        data: rows
       });
   
     } catch (error) {
