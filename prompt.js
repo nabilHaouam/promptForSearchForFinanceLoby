@@ -248,8 +248,8 @@ function getMappedValue(category, value) {
       
       processedString = processedString.trim();
   
-      // Split the input into sections based on "---"
-      const sections = processedString.split('---').map(section => section.trim());
+      // Split the input into sections based on "---" or double newlines
+      const sections = processedString.split(/---|\n\n+/).map(section => section.trim());
       
       // Initialize result object
       const result = {
@@ -260,51 +260,47 @@ function getMappedValue(category, value) {
   
       // Process each section
       sections.forEach(section => {
-        if (!section) return; // Skip empty sections
-        
-        const sectionLines = section.split('\n').map(line => line.trim()).filter(Boolean);
-        
-        // Process CSV sections (starts with "Company Name,Website,Reason for Fit")
-        if (sectionLines[0]?.startsWith('Company Name,Website,Reason for Fit')) {
+        const sectionLines = section.split('\n').map(line => line.trim());
+  
+        // Process List sections
+        if (section.includes('List') && section.includes('Company Name,Website,Reason for Fit')) {
           const csvLines = sectionLines
-            .filter(line => line.includes(',') && 
-                           !line.startsWith('Company Name,Website,Reason for Fit') &&
-                           !line.startsWith('(No specific lenders'));
+            .filter(line => line && !line.startsWith('List') && line !== 'Company Name,Website,Reason for Fit');
             
-          const lenders = csvLines
-            .filter(line => line.split(',').length >= 3) // Ensure line has all required fields
-            .map(line => {
-              const [companyName, website, ...reasonParts] = line.split(',');
-              return {
-                companyName: companyName.trim(),
-                website: website.trim(),
-                reasonForFit: reasonParts.join(',').trim() // Rejoin reason parts in case it contained commas
-              };
-            });
+          const lenders = csvLines.map(line => {
+            const [companyName, website, reasonForFit] = line.split(',').map(field => field.trim());
+            return {
+              companyName,
+              website,
+              reasonForFit
+            };
+          });
           
           if (lenders.length > 0) {
             result.lenderLists.push(lenders);
           }
         }
         // Process Script section
-        else if (section.startsWith('Script')) {
+        else if (section.includes('Script')) {
           const scriptContent = sectionLines
-            .filter(line => line !== 'Script')
+            .filter(line => line && !line.startsWith('Script') && !line.includes('Voicemail Script:'))
             .join(' ');
           if (scriptContent) {
             result.script = scriptContent;
           }
         }
         // Process Email section
-        else if (sectionLines[0]?.startsWith('Email Subject,Deal Summary')) {
+        else if (section.includes('Email Subject,Deal Summary')) {
           const emailLines = sectionLines
-            .filter(line => !line.startsWith('Email Subject,Deal Summary'));
+            .filter(line => line && 
+                           line !== 'Email Subject,Deal Summary' && 
+                           !line.startsWith('Deal Summary for Email:'));
           
           if (emailLines.length > 0) {
-            const [subject, ...summaryParts] = emailLines[0].split(',');
+            const [subject, summary] = emailLines[0].split(',').map(field => field.trim());
             result.emailDetails = {
-              subject: subject.trim(),
-              summary: summaryParts.join(',').trim() // Rejoin summary parts in case it contained commas
+              subject,
+              summary
             };
           }
         }
