@@ -222,35 +222,6 @@ function getMappedValue(category, value) {
         });
       }
   
-      // Clean and process the input string
-      let processedString = inputString;
-      
-      // Handle potential JSON string encoding
-      try {
-        if (typeof processedString === 'string' && processedString.includes('"inputString":')) {
-          const parsed = JSON.parse(processedString);
-          processedString = parsed.inputString;
-        }
-      } catch (e) {
-        console.log('Not a JSON string, continuing with raw input');
-      }
-  
-      // Remove backticks and csv marker if present
-      if (processedString.startsWith('```')) {
-        processedString = processedString.slice(3);
-        if (processedString.startsWith('csv')) {
-          processedString = processedString.slice(3);
-        }
-      }
-      if (processedString.endsWith('```')) {
-        processedString = processedString.slice(0, -3);
-      }
-      
-      processedString = processedString.trim();
-  
-      // Split the input into sections based on "---" or double newlines
-      const sections = processedString.split(/---|\n\n+/).map(section => section.trim());
-      
       // Initialize result object
       const result = {
         lenderLists: [],
@@ -258,15 +229,24 @@ function getMappedValue(category, value) {
         emailDetails: null
       };
   
+      // Split the input into sections based on newline patterns
+      const sections = inputString.split(/(?=List \d:)/).map(section => section.trim());
+  
       // Process each section
       sections.forEach(section => {
-        const sectionLines = section.split('\n').map(line => line.trim());
+        if (!section) return; // Skip empty sections
+        
+        const lines = section.split('\n').map(line => line.trim());
+        
+        // Check if this is a List section
+        if (section.startsWith('List')) {
+          const csvLines = lines
+            .filter(line => 
+              line && 
+              !line.startsWith('List') && 
+              line !== 'Company Name,Website,Reason for Fit'
+            );
   
-        // Process List sections
-        if (section.includes('List') && section.includes('Company Name,Website,Reason for Fit')) {
-          const csvLines = sectionLines
-            .filter(line => line && !line.startsWith('List') && line !== 'Company Name,Website,Reason for Fit');
-            
           const lenders = csvLines.map(line => {
             const [companyName, website, reasonForFit] = line.split(',').map(field => field.trim());
             return {
@@ -274,27 +254,29 @@ function getMappedValue(category, value) {
               website,
               reasonForFit
             };
-          });
-          
+          }).filter(lender => lender.companyName && lender.website && lender.reasonForFit);
+  
           if (lenders.length > 0) {
             result.lenderLists.push(lenders);
           }
         }
-        // Process Script section
-        else if (section.includes('Script')) {
-          const scriptContent = sectionLines
-            .filter(line => line && !line.startsWith('Script') && !line.includes('Voicemail Script:'))
+        // Process Script section if we add it later
+        else if (section.includes('Script:')) {
+          const scriptContent = lines
+            .filter(line => line && !line.startsWith('Script:'))
             .join(' ');
           if (scriptContent) {
             result.script = scriptContent;
           }
         }
-        // Process Email section
+        // Process Email section if we add it later
         else if (section.includes('Email Subject,Deal Summary')) {
-          const emailLines = sectionLines
-            .filter(line => line && 
-                           line !== 'Email Subject,Deal Summary' && 
-                           !line.startsWith('Deal Summary for Email:'));
+          const emailLines = lines
+            .filter(line => 
+              line && 
+              line !== 'Email Subject,Deal Summary' && 
+              !line.startsWith('Deal Summary for Email:')
+            );
           
           if (emailLines.length > 0) {
             const [subject, summary] = emailLines[0].split(',').map(field => field.trim());
@@ -306,16 +288,26 @@ function getMappedValue(category, value) {
         }
       });
   
+      // Add debugging information in development
+      const debug = {
+        numberOfSections: sections.length,
+        sectionsFound: sections.map(section => section.split('\n')[0]),
+        numberOfLenderLists: result.lenderLists.length,
+        totalLenders: result.lenderLists.reduce((acc, list) => acc + list.length, 0)
+      };
+  
       res.json({
         success: true,
-        data: result
+        data: result,
+        debug: process.env.NODE_ENV !== 'production' ? debug : undefined
       });
   
     } catch (error) {
       console.error('Error processing CSV data:', error);
       res.status(500).json({
         error: 'Failed to parse CSV data',
-        details: error.message
+        details: error.message,
+        stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined
       });
     }
   });
