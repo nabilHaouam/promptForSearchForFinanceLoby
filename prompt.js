@@ -225,8 +225,20 @@ function getMappedValue(category, value) {
       // Clean and parse the input string
       let parsedArray;
       try {
+        if (!inputString) {
+          return res.status(400).json({
+            error: 'Missing input',
+            details: 'Input string is required'
+          });
+        }
+  
+        // If inputString is not a string, convert it
+        const stringInput = typeof inputString === 'string' ? 
+          inputString : 
+          JSON.stringify(inputString);
+        
         // Clean the input string
-        const cleanedInput = inputString
+        const cleanedInput = stringInput
           .replace(/^\s+|\s+$/g, '') // Trim whitespace
           .replace(/^3\|prompt\s+\|/gm, '') // Remove log prefixes
           .replace(/\n\s+/g, '\n') // Remove extra spaces after newlines
