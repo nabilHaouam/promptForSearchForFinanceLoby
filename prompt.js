@@ -222,10 +222,19 @@ function getMappedValue(category, value) {
         });
       }
   
-      // Parse the input string as JSON array
+      // Parse the input string, handling both direct array and wrapped object cases
       let parsedArray;
       try {
-        parsedArray = JSON.parse(inputString);
+        const parsed = JSON.parse(inputString);
+        // Check if the input is wrapped in an inputString property
+        parsedArray = Array.isArray(parsed) ? parsed : parsed.inputString;
+        
+        if (!Array.isArray(parsedArray)) {
+          return res.status(400).json({
+            error: 'Invalid format',
+            details: 'Input must be an array or an object with inputString array property'
+          });
+        }
       } catch (e) {
         return res.status(400).json({
           error: 'Invalid JSON format',
