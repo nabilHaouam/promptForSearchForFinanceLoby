@@ -222,10 +222,20 @@ function getMappedValue(category, value) {
         });
       }
   
-      // Parse the input string, handling both direct array and wrapped object cases
+      // Clean and parse the input string
       let parsedArray;
       try {
-        const parsed = JSON.parse(inputString);
+        // Clean the input string
+        const cleanedInput = inputString
+          .replace(/^\s+|\s+$/g, '') // Trim whitespace
+          .replace(/^3\|prompt\s+\|/gm, '') // Remove log prefixes
+          .replace(/\n\s+/g, '\n') // Remove extra spaces after newlines
+          .trim();
+  
+        console.log('Cleaned input:', cleanedInput.substring(0, 100));
+        
+        const parsed = JSON.parse(cleanedInput);
+        
         // Check if the input is wrapped in an inputString property
         parsedArray = Array.isArray(parsed) ? parsed : parsed.inputString;
         
@@ -236,6 +246,7 @@ function getMappedValue(category, value) {
           });
         }
       } catch (e) {
+        console.error('Parsing error:', e);
         return res.status(400).json({
           error: 'Invalid JSON format',
           details: e.message
