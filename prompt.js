@@ -211,6 +211,88 @@ function getMappedValue(category, value) {
       });
     }
   });
+
+  app.post('/parse-csv-data', (req, res) => {
+    try {
+      const { inputString } = req.body;
+      
+      if (!inputString) {
+        return res.status(400).json({
+          error: 'Missing required input string'
+        });
+      }
+  
+      // Remove backticks if present
+      let processedString = inputString;
+      if (inputString.startsWith('```') && inputString.endsWith('```')) {
+        processedString = inputString.slice(3, -3).trim();
+      }
+  
+      // Split the input into sections based on "---"
+      const sections = processedString.split('---').map(section => section.trim());
+      
+      // Initialize result object
+      const result = {
+        lenderLists: [],
+        script: '',
+        emailDetails: null
+      };
+  
+      // Process each section
+      sections.forEach(section => {
+        // Check if section is CSV data (starts with "Company Name,Website,Reason for Fit")
+        if (section.startsWith('Company Name,Website,Reason for Fit')) {
+          // Parse CSV section
+          const lines = section.split('\n')
+            .map(line => line.trim())
+            .filter(line => line && line !== 'Company Name,Website,Reason for Fit');
+          
+          const lenders = lines.map(line => {
+            const [companyName, website, reasonForFit] = line.split(',').map(field => field.trim());
+            return {
+              companyName,
+              website,
+              reasonForFit
+            };
+          });
+          
+          if (lenders.length > 0) {
+            result.lenderLists.push(lenders);
+          }
+        }
+        // Check if section is script
+        else if (section.startsWith('Script')) {
+          result.script = section.replace('Script', '').trim();
+        }
+        // Check if section contains email details
+        else if (section.includes('Email Subject,Deal Summary')) {
+          const lines = section.split('\n')
+            .map(line => line.trim())
+            .filter(line => line && line !== 'Email Subject,Deal Summary');
+          
+          if (lines.length > 0) {
+            const [subject, summary] = lines[0].split(',').map(field => field.trim());
+            result.emailDetails = {
+              subject,
+              summary
+            };
+          }
+        }
+      });
+  
+      res.json({
+        success: true,
+        data: result
+      });
+  
+    } catch (error) {
+      console.error('Error processing CSV data:', error);
+      res.status(500).json({
+        error: 'Failed to parse CSV data',
+        details: error.message
+      });
+    }
+  });
   
   // Add error handling middleware
   app.use((err, req, res, next) => {
