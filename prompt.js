@@ -222,14 +222,34 @@ function getMappedValue(category, value) {
         });
       }
   
-      // Remove backticks if present
+      // Clean and process the input string
       let processedString = inputString;
-      if (inputString.startsWith('```') && inputString.endsWith('```')) {
-        processedString = inputString.slice(3, -3).trim();
+      
+      // Handle potential JSON string encoding
+      try {
+        if (typeof processedString === 'string' && processedString.includes('"inputString":')) {
+          const parsed = JSON.parse(processedString);
+          processedString = parsed.inputString;
+        }
+      } catch (e) {
+        console.log('Not a JSON string, continuing with raw input');
       }
   
-      // Split the input into sections based on "---"
-      const sections = processedString.split('---').map(section => section.trim());
+      // Remove backticks and csv marker if present
+      if (processedString.startsWith('```')) {
+        processedString = processedString.slice(3);
+        if (processedString.startsWith('csv')) {
+          processedString = processedString.slice(3);
+        }
+      }
+      if (processedString.endsWith('```')) {
+        processedString = processedString.slice(0, -3);
+      }
+      
+      processedString = processedString.trim();
+  
+      // Split the input into sections based on "---" or double newlines
+      const sections = processedString.split(/---|\n\n+/).map(section => section.trim());
       
       // Initialize result object
       const result = {
@@ -240,14 +260,14 @@ function getMappedValue(category, value) {
   
       // Process each section
       sections.forEach(section => {
-        // Check if section is CSV data (starts with "Company Name,Website,Reason for Fit")
-        if (section.startsWith('Company Name,Website,Reason for Fit')) {
-          // Parse CSV section
-          const lines = section.split('\n')
-            .map(line => line.trim())
-            .filter(line => line && line !== 'Company Name,Website,Reason for Fit');
-          
-          const lenders = lines.map(line => {
+        const sectionLines = section.split('\n').map(line => line.trim());
+  
+        // Process List sections
+        if (section.includes('List') && section.includes('Company Name,Website,Reason for Fit')) {
+          const csvLines = sectionLines
+            .filter(line => line && !line.startsWith('List') && line !== 'Company Name,Website,Reason for Fit');
+            
+          const lenders = csvLines.map(line => {
             const [companyName, website, reasonForFit] = line.split(',').map(field => field.trim());
             return {
               companyName,
@@ -260,18 +280,24 @@ function getMappedValue(category, value) {
             result.lenderLists.push(lenders);
           }
         }
-        // Check if section is script
-        else if (section.startsWith('Script')) {
-          result.script = section.replace('Script', '').trim();
+        // Process Script section
+        else if (section.includes('Script')) {
+          const scriptContent = sectionLines
+            .filter(line => line && !line.startsWith('Script') && !line.includes('Voicemail Script:'))
+            .join(' ');
+          if (scriptContent) {
+            result.script = scriptContent;
+          }
         }
-        // Check if section contains email details
+        // Process Email section
         else if (section.includes('Email Subject,Deal Summary')) {
-          const lines = section.split('\n')
-            .map(line => line.trim())
-            .filter(line => line && line !== 'Email Subject,Deal Summary');
+          const emailLines = sectionLines
+            .filter(line => line && 
+                           line !== 'Email Subject,Deal Summary' && 
+                           !line.startsWith('Deal Summary for Email:'));
           
-          if (lines.length > 0) {
-            const [subject, summary] = lines[0].split(',').map(field => field.trim());
+          if (emailLines.length > 0) {
+            const [subject, summary] = emailLines[0].split(',').map(field => field.trim());
             result.emailDetails = {
               subject,
               summary
