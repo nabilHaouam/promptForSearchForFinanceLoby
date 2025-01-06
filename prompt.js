@@ -245,9 +245,39 @@ function getMappedValue(category, value) {
         });
       }
   
+      // Transform the data
+      const result = [];
+      let currentSection = '';
+  
+      rows.forEach(row => {
+        // Check if this is a section header
+        if (row[0].includes('institutions') || 
+            row[0] === 'Voicemail Script' || 
+            row[0] === 'Deal Summary for Email') {
+          currentSection = row[0];
+          // Add section header as a row
+          result.push({
+            companyName: currentSection,
+            website: '',
+            reasonForFit: ''
+          });
+        }
+        // Skip the "Company Name, Website, Reason for Fit" header row
+        else if (row[0] !== 'Company Name' && row[0] !== 'Script' && row[0] !== 'Email Subject') {
+          // Add regular data row
+          if (row[0]) {  // Only add if there's a company name
+            result.push({
+              companyName: row[0],
+              website: row[1] || '',
+              reasonForFit: row[2] || ''
+            });
+          }
+        }
+      });
+  
       res.json({
         success: true,
-        data: rows
+        data: result
       });
   
     } catch (error) {
